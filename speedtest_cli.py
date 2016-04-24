@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#! /Users/Nest/anaconda/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2012-2015 Matt Martz
+# Copyright 2012-2014 Matt Martz
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -22,20 +22,25 @@ import math
 import signal
 import socket
 import timeit
-import platform
 import threading
 
-__version__ = '0.3.4'
+# These are things that I added
+import pandas as pd
+import time
+
+__version__ = '0.3.2'
 
 # Some global variables we use
-user_agent = None
+user_agent = 'speedtest-cli/%s' % __version__
 source = None
 shutdown_event = None
-scheme = 'http'
-
 
 # Used for bound_interface
 socket_socket = socket.socket
+
+# Make some lists to hold upload and download speed values
+download = []
+upload = []
 
 try:
     import xml.etree.cElementTree as ET
@@ -55,15 +60,7 @@ except ImportError:
 try:
     from httplib import HTTPConnection, HTTPSConnection
 except ImportError:
-    e_http_py2 = sys.exc_info()
-    try:
-        from http.client import HTTPConnection, HTTPSConnection
-    except ImportError:
-        e_http_py3 = sys.exc_info()
-        raise SystemExit('Your python installation is missing required HTTP '
-                         'client classes:\n\n'
-                         'Python 2: %s\n'
-                         'Python 3: %s' % (e_http_py2[1], e_http_py3[1]))
+    from http.client import HTTPConnection, HTTPSConnection
 
 try:
     from Queue import Queue
@@ -185,24 +182,6 @@ def distance(origin, destination):
     return d
 
 
-def build_user_agent():
-    """Build a Mozilla/5.0 compatible User-Agent string"""
-
-    global user_agent
-    if user_agent:
-        return user_agent
-
-    ua_tuple = (
-        'Mozilla/5.0',
-        '(%s; U; %s; en-us)' % (platform.system(), platform.architecture()[0]),
-        'Python/%s' % platform.python_version(),
-        '(KHTML, like Gecko)',
-        'speedtest-cli/%s' % __version__
-    )
-    user_agent = ' '.join(ua_tuple)
-    return user_agent
-
-
 def build_request(url, data=None, headers={}):
     """Build a urllib2 request object
 
@@ -210,13 +189,8 @@ def build_request(url, data=None, headers={}):
 
     """
 
-    if url[0] == ':':
-        schemed_url = '%s%s' % (scheme, url)
-    else:
-        schemed_url = url
-
     headers['User-Agent'] = user_agent
-    return Request(schemed_url, data=data, headers=headers)
+    return Request(url, data=data, headers=headers)
 
 
 def catch_request(request):
@@ -227,10 +201,9 @@ def catch_request(request):
 
     try:
         uh = urlopen(request)
-        return uh, False
+        return uh
     except (HTTPError, URLError, socket.error):
-        e = sys.exc_info()[1]
-        return None, e
+        return False
 
 
 class FileGetter(threading.Thread):
@@ -375,10 +348,10 @@ def getConfig():
     we are interested in
     """
 
-    request = build_request('://www.speedtest.net/speedtest-config.php')
-    uh, e = catch_request(request)
-    if e:
-        print_('Could not retrieve speedtest.net configuration: %s' % e)
+    request = build_request('https://www.speedtest.net/speedtest-config.php')
+    uh = catch_request(request)
+    if uh is False:
+        print_('Could not retrieve speedtest.net configuration')
         sys.exit(1)
     configxml = []
     while 1:
@@ -417,19 +390,15 @@ def closestServers(client, all=False):
     """
 
     urls = [
-        '://www.speedtest.net/speedtest-servers-static.php',
-        '://c.speedtest.net/speedtest-servers-static.php',
-        '://www.speedtest.net/speedtest-servers.php',
-        '://c.speedtest.net/speedtest-servers.php',
+        'https://www.speedtest.net/speedtest-servers-static.php',
+        'http://c.speedtest.net/speedtest-servers-static.php',
     ]
-    errors = []
     servers = {}
     for url in urls:
         try:
             request = build_request(url)
-            uh, e = catch_request(request)
-            if e:
-                errors.append('%s' % e)
+            uh = catch_request(request)
+            if uh is False:
                 raise SpeedtestCliServerListError
             serversxml = []
             while 1:
@@ -474,8 +443,7 @@ def closestServers(client, all=False):
             break
 
     if not servers:
-        print_('Failed to retrieve list of speedtest.net servers:\n\n %s' %
-               '\n'.join(errors))
+        print_('Failed to retrieve list of speedtest.net servers')
         sys.exit(1)
 
     closest = []
@@ -550,7 +518,7 @@ def version():
 def speedtest():
     """Run the full speedtest.net test"""
 
-    global shutdown_event, source, scheme
+    global shutdown_event, source, isp_name
     shutdown_event = threading.Event()
 
     signal.signal(signal.SIGINT, ctrl_c)
@@ -587,9 +555,6 @@ def speedtest():
     parser.add_argument('--source', help='Source IP address to bind to')
     parser.add_argument('--timeout', default=10, type=int,
                         help='HTTP timeout in seconds. Default 10')
-    parser.add_argument('--secure', action='store_true',
-                        help='Use HTTPS instead of HTTP when communicating '
-                             'with speedtest.net operated servers')
     parser.add_argument('--version', action='store_true',
                         help='Show the version number and exit')
 
@@ -606,16 +571,10 @@ def speedtest():
 
     socket.setdefaulttimeout(args.timeout)
 
-    # Pre-cache the user agent string
-    build_user_agent()
-
     # If specified bind to a specific IP address
     if args.source:
         source = args.source
         socket.socket = bound_socket
-
-    if args.secure:
-        scheme = 'https'
 
     if not args.simple:
         print_('Retrieving speedtest.net configuration...')
@@ -635,7 +594,16 @@ def speedtest():
                 line = ('%(id)4s) %(sponsor)s (%(name)s, %(country)s) '
                         '[%(d)0.2f km]' % server)
                 serverList.append(line)
-            print_('\n'.join(serverList).encode('utf-8', 'ignore'))
+            # Python 2.7 and newer seem to be ok with the resultant encoding
+            # from parsing the XML, but older versions have some issues.
+            # This block should detect whether we need to encode or not
+            try:
+                unicode()
+                print_('\n'.join(serverList).encode('utf-8', 'ignore'))
+            except NameError:
+                print_('\n'.join(serverList))
+            except IOError:
+                pass
             sys.exit(0)
     else:
         servers = closestServers(config['client'])
@@ -703,8 +671,20 @@ def speedtest():
         best = getBestServer(servers)
 
     if not args.simple:
-        print_(('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
-               '%(latency)s ms' % best).encode('utf-8', 'ignore'))
+        # Python 2.7 and newer seem to be ok with the resultant encoding
+        # from parsing the XML, but older versions have some issues.
+        # This block should detect whether we need to encode or not
+        try:
+            unicode()
+            print_(('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
+                   '%(latency)s ms' % best).encode('utf-8', 'ignore'))
+
+            isp_name = (('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
+                   '%(latency)s ms' % best).encode('utf-8', 'ignore'))
+
+        except NameError:
+            print_('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
+                   '%(latency)s ms' % best)
     else:
         print_('Ping: %(latency)s ms' % best)
 
@@ -722,6 +702,9 @@ def speedtest():
     print_('Download: %0.2f M%s/s' %
            ((dlspeed / 1000 / 1000) * args.units[1], args.units[0]))
 
+    # This is a line I have added
+    download.append('Download: %0.2f M%s/s' % ((dlspeed / 1000 / 1000) * args.units[1], args.units[0]))
+
     sizesizes = [int(.25 * 1000 * 1000), int(.5 * 1000 * 1000)]
     sizes = []
     for size in sizesizes:
@@ -734,6 +717,9 @@ def speedtest():
         print_()
     print_('Upload: %0.2f M%s/s' %
            ((ulspeed / 1000 / 1000) * args.units[1], args.units[0]))
+
+    upload.append('Upload: %0.2f M%s/s' % ((ulspeed / 1000 / 1000) * args.units[1], args.units[0]))
+
 
     if args.share and args.mini:
         print_('Cannot generate a speedtest.net share results image while '
@@ -759,13 +745,13 @@ def speedtest():
                              (ping, ulspeedk, dlspeedk, '297aae72'))
                             .encode()).hexdigest()]
 
-        headers = {'Referer': 'http://c.speedtest.net/flash/speedtest.swf'}
-        request = build_request('://www.speedtest.net/api/api.php',
+        headers = {'Referer': 'https://c.speedtest.net/flash/speedtest.swf'}
+        request = build_request('https://www.speedtest.net/api/api.php',
                                 data='&'.join(apiData).encode(),
                                 headers=headers)
-        f, e = catch_request(request)
-        if e:
-            print_('Could not submit results to speedtest.net: %s' % e)
+        f = catch_request(request)
+        if f is False:
+            print_('Could not submit results to speedtest.net')
             sys.exit(1)
         response = f.read()
         code = f.code
@@ -781,8 +767,8 @@ def speedtest():
             print_('Could not submit results to speedtest.net')
             sys.exit(1)
 
-        print_('Share results: %s://www.speedtest.net/result/%s.png' %
-               (scheme, resultid[0]))
+        print_('Share results: https://www.speedtest.net/result/%s.png' %
+               resultid[0])
 
 
 def main():
@@ -796,3 +782,28 @@ if __name__ == '__main__':
     main()
 
 # vim:ts=4:sw=4:expandtab
+
+# Print some test output
+print("\nData from the most recent run")
+print "Download speed:", float(download[0][10:15])
+print "Upload speed:", float(upload[0][8:13])
+
+time = [time.strftime("%Y/%d/%m %H:%M:%S")]
+
+# Make a data frame with updated data
+temp_speed_frame = pd.DataFrame({"Time":time, "Download":float(download[0][10:15]), "Upload":float(upload[0][8:13]), "location":isp_name})
+
+# read in the historical data from the speed frame file
+speed_frame = pd.read_csv("/Users/Nest/Documents/speedtest-cli-master/speed_frame.csv", index_col = None)
+
+print("\nHistorical data from speed frame:")
+print(speed_frame)
+
+# Append the new data to the bottom of the speed frame
+new_data = speed_frame.append(temp_speed_frame)
+
+print("\nUpdated speed frame")
+print(new_data)
+
+# Output results to an updated file
+new_data.to_csv("/Users/Nest/Documents/speedtest-cli-master/speed_frame.csv", index = False)
