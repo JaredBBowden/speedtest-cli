@@ -15,18 +15,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import math
 import os
 import re
-import sys
-import math
 import signal
 import socket
-import timeit
+import sys
 import threading
+import time
+import timeit
 
 # These are things that I added
 import pandas as pd
-import time
 
 __version__ = '0.3.2'
 
@@ -677,10 +677,10 @@ def speedtest():
         try:
             unicode()
             print_(('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
-                   '%(latency)s ms' % best).encode('utf-8', 'ignore'))
+                    '%(latency)s ms' % best).encode('utf-8', 'ignore'))
 
             isp_name = (('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
-                   '%(latency)s ms' % best).encode('utf-8', 'ignore'))
+                         '%(latency)s ms' % best).encode('utf-8', 'ignore'))
 
         except NameError:
             print_('Hosted by %(sponsor)s (%(name)s) [%(d)0.2f km]: '
@@ -703,7 +703,8 @@ def speedtest():
            ((dlspeed / 1000 / 1000) * args.units[1], args.units[0]))
 
     # This is a line I have added
-    download.append('Download: %0.2f M%s/s' % ((dlspeed / 1000 / 1000) * args.units[1], args.units[0]))
+    download.append('Download: %0.2f M%s/s' %
+                    ((dlspeed / 1000 / 1000) * args.units[1], args.units[0]))
 
     sizesizes = [int(.25 * 1000 * 1000), int(.5 * 1000 * 1000)]
     sizes = []
@@ -718,8 +719,8 @@ def speedtest():
     print_('Upload: %0.2f M%s/s' %
            ((ulspeed / 1000 / 1000) * args.units[1], args.units[0]))
 
-    upload.append('Upload: %0.2f M%s/s' % ((ulspeed / 1000 / 1000) * args.units[1], args.units[0]))
-
+    upload.append('Upload: %0.2f M%s/s' %
+                  ((ulspeed / 1000 / 1000) * args.units[1], args.units[0]))
 
     if args.share and args.mini:
         print_('Cannot generate a speedtest.net share results image while '
@@ -791,10 +792,12 @@ print "Upload speed:", float(upload[0][8:13])
 time = [time.strftime("%Y/%d/%m %H:%M:%S")]
 
 # Make a data frame with updated data
-temp_speed_frame = pd.DataFrame({"Time":time, "Download":float(download[0][10:15]), "Upload":float(upload[0][8:13]), "location":isp_name})
+temp_speed_frame = pd.DataFrame({"Time": time, "Download": float(
+    download[0][10:15]), "Upload": float(upload[0][8:13]), "location": isp_name})
 
 # read in the historical data from the speed frame file
-speed_frame = pd.read_csv("/Users/Nest/Documents/speedtest-cli-master/speed_frame.csv", index_col = None)
+speed_frame = pd.read_csv(
+    "/Users/Nest/Documents/speedtest-cli-master/speed_frame.csv", index_col=None)
 
 print("\nHistorical data from speed frame:")
 print(speed_frame)
@@ -806,4 +809,5 @@ print("\nUpdated speed frame")
 print(new_data)
 
 # Output results to an updated file
-new_data.to_csv("/Users/Nest/Documents/speedtest-cli-master/speed_frame.csv", index = False)
+new_data.to_csv(
+    "/Users/Nest/Documents/speedtest-cli-master/speed_frame.csv", index=False)
