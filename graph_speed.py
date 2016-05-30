@@ -1,32 +1,56 @@
-import pandas as pd
 import matplotlib.pylab as plt
+import pandas as pd
+from matplotlib.dates import DateFormatter
 
-# TODO let's update the way that we're parsing time here
+data_path = "/Users/jaredbowden/Google Drive/cave_in_a_lake/data/"
+
 dateparse = lambda x: pd.datetime.strptime(x, '%Y/%d/%m %H:%M:%S')
 
-raw_data = pd.read_csv("./speed_frame.csv", parse_dates=['Time'], date_parser=dateparse)
+raw_data = pd.read_csv(data_path + "speed_frame.csv",
+                       parse_dates=['Time'],
+                       date_parser=dateparse)
 
 temp_color = []
 
 for line in raw_data["location"]:
 
-	if line == "0":
+    if line == "0":
 
-		temp_color.append("grey")
+        temp_color.append("grey")
 
-	elif "Austin" in line:
+    elif "Austin" in line:
 
-		temp_color.append("green")
+        temp_color.append("green")
 
-	else:
+    else:
 
-		temp_color.append("red")
+        temp_color.append("red")
 
 raw_data["temp_color"] = temp_color
-
+"""
 raw_data["Time"] = pd.to_datetime(raw_data["Time"])
 
-plt.scatter(range(len(raw_data["Time"])), raw_data["Download"], color = raw_data["temp_color"], alpha = 0.8)
+plt.scatter(
+    range(len(raw_data["Time"])),
+    raw_data["Download"],
+    color=raw_data["temp_color"],
+    alpha=0.8)
+"""
+
+# This is going to be a variation on the plotting option
+fig, ax = plt.subplots()
+
+ax.plot_date(x=raw_data["Time"],
+             y=raw_data["Download"],
+             alpha=0.8,
+             color=raw_data["temp_color"])
+
+myFmt = DateFormatter('%b %G')
+ax.xaxis.set_major_formatter(myFmt)
+
+ax.autoscale_view()
+
+fig.autofmt_xdate()
 
 plt.title("Moontower Internet Speed")
 plt.xlabel("Time")
