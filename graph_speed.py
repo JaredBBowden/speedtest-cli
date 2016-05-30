@@ -1,3 +1,9 @@
+__author__ = "Jared B Bowden"
+__version__ = 1.2
+"""
+Plot of internet speed
+"""
+
 import matplotlib.pylab as plt
 import pandas as pd
 from matplotlib.dates import DateFormatter
@@ -10,40 +16,40 @@ raw_data = pd.read_csv(data_path + "speed_frame.csv",
                        parse_dates=['Time'],
                        date_parser=dateparse)
 
-temp_color = []
+location_tag = []
 
 for line in raw_data["location"]:
 
     if line == "0":
 
-        temp_color.append("grey")
+        location_tag.append("Empty")
 
     elif "Austin" in line:
 
-        temp_color.append("green")
+        location_tag.append("Time Warner")
 
     else:
 
-        temp_color.append("red")
+        location_tag.append("VPN")
 
-raw_data["temp_color"] = temp_color
-"""
-raw_data["Time"] = pd.to_datetime(raw_data["Time"])
+raw_data["location_tag"] = location_tag
 
-plt.scatter(
-    range(len(raw_data["Time"])),
-    raw_data["Download"],
-    color=raw_data["temp_color"],
-    alpha=0.8)
-"""
-
-# This is going to be a variation on the plotting option
+# Plot things up
 fig, ax = plt.subplots()
 
-ax.plot_date(x=raw_data["Time"],
-             y=raw_data["Download"],
-             alpha=0.8,
-             color=raw_data["temp_color"])
+location = ["Empty", "Time Warner", "VPN"]
+marker_color = ["0.75", "g", "r"]
+
+for color, plot_layer in enumerate(location):
+    ax.plot_date(
+        x=raw_data[raw_data["location_tag"] == plot_layer]["Time"],
+        y=raw_data[raw_data["location_tag"] == plot_layer]["Download"],
+        marker="o",
+        fillstyle="full",
+        linestyle='None',
+        alpha=0.5,
+        markeredgewidth=0.0,
+        fmt=marker_color[color])
 
 myFmt = DateFormatter('%b %G')
 ax.xaxis.set_major_formatter(myFmt)
